@@ -39,100 +39,14 @@ extension ViewController {
   }
 
   func setupExternalDisplayNotifications() {
-    print("Setting up external display notifications")
-
-    // Check if external display is already connected at startup
-    if UIScreen.screens.count > 1 {
-      print("External display already connected at startup - triggering connection handler")
-      DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-        self.handleExternalDisplayConnected(Notification(name: .externalDisplayConnected))
-      }
-    }
-
-    // Listen for external display connection
-    NotificationCenter.default.addObserver(
-      self,
-      selector: #selector(handleExternalDisplayConnected(_:)),
-      name: .externalDisplayConnected,
-      object: nil
-    )
-
-    // Listen for external display disconnection
-    NotificationCenter.default.addObserver(
-      self,
-      selector: #selector(handleExternalDisplayDisconnected(_:)),
-      name: .externalDisplayDisconnected,
-      object: nil
-    )
-
-    // Listen for when external display is ready
-    NotificationCenter.default.addObserver(
-      self,
-      selector: #selector(handleExternalDisplayReady(_:)),
-      name: .externalDisplayReady,
-      object: nil
-    )
-
-    // Listen for detection count updates from external display
-    NotificationCenter.default.addObserver(
-      self,
-      selector: #selector(handleDetectionCountUpdate(_:)),
-      name: .detectionCountDidUpdate,
-      object: nil
-    )
+    // External display support is optional and not required for pothole detection app
+    print("External display support disabled for pothole detection app")
   }
 
   @objc func handleExternalDisplayConnected(_ notification: Notification) {
+    // External display support disabled
     DispatchQueue.main.async {
-      self.isExternalDisplayConnected = true
-      self.yoloView.stop()
-      self.yoloView.setInferenceFlag(ok: false)
       self.showExternalDisplayStatus()
-
-      self.requestLandscapeOrientation()
-
-      DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-        self.adjustLayoutForExternalDisplayIfNeeded()
-
-        self.view.setNeedsLayout()
-        self.view.layoutIfNeeded()
-        [
-          self.yoloView.sliderConf, self.yoloView.labelSliderConf,
-          self.yoloView.sliderIoU, self.yoloView.labelSliderIoU,
-          self.yoloView.sliderNumItems, self.yoloView.labelSliderNumItems,
-          self.yoloView.playButton, self.yoloView.pauseButton,
-          self.modelSegmentedControl,
-        ].forEach { $0?.isHidden = false }
-
-        self.customModelButton?.isHidden = self.currentModels.isEmpty
-
-        [
-          self.yoloView.switchCameraButton,
-          self.yoloView.shareButton,
-        ].forEach { $0.isHidden = true }
-        self.yoloView.labelSliderNumItems.text =
-          "0 items (max \(Int(self.yoloView.sliderNumItems.value)))"
-
-        self.yoloView.sliderNumItems.addTarget(
-          self,
-          action: #selector(self.updateNumItemsLabelForExternalDisplay),
-          for: .valueChanged
-        )
-        self.modelSegmentedControl.setNeedsLayout()
-        self.modelSegmentedControl.layoutIfNeeded()
-      }
-
-      DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-        if self.currentLoadingEntry != nil || !self.currentModels.isEmpty {
-          self.notifyExternalDisplayOfCurrentModel()
-        }
-        self.sliderValueChanged(self.yoloView.sliderConf)
-        NotificationCenter.default.post(
-          name: .taskDidChange,
-          object: nil,
-          userInfo: ["task": self.currentTask]
-        )
-      }
     }
   }
 
@@ -148,41 +62,15 @@ extension ViewController {
   }
 
   @objc private func updateNumItemsLabelForExternalDisplay() {
-    if isExternalDisplayConnected {
-      let maxValue = Int(yoloView.sliderNumItems.value)
-      let currentText = yoloView.labelSliderNumItems.text ?? ""
-      let currentCount = Int(currentText.split(separator: " ").first ?? "0") ?? 0
-      yoloView.labelSliderNumItems.text = "\(currentCount) items (max \(maxValue))"
-    }
+    // Not applicable for pothole detection app
   }
 
   @objc private func handleDetectionCountUpdate(_ notification: Notification) {
-    guard isExternalDisplayConnected,
-      let count = notification.userInfo?["count"] as? Int
-    else { return }
-
-    DispatchQueue.main.async { [weak self] in
-      guard let self = self else { return }
-      let maxValue = Int(self.yoloView.sliderNumItems.value)
-      self.yoloView.labelSliderNumItems.text = "\(count) items (max \(maxValue))"
-    }
+    // External display support disabled
   }
 
   func notifyExternalDisplayOfCurrentModel() {
-    let yoloTask = tasks.first(where: { $0.name == currentTask })?.yoloTask ?? .detect
-
-    var fullModelPath = currentModelName
-    if let entry = currentLoadingEntry
-      ?? currentModels.first(where: { processString($0.displayName) == currentModelName }),
-      entry.isLocalBundle,
-      let folderURL = tasks.first(where: { $0.name == currentTask })?.folder,
-      let folderPathURL = Bundle.main.url(forResource: folderURL, withExtension: nil)
-    {
-      let modelURL = folderPathURL.appendingPathComponent(entry.identifier)
-      fullModelPath = modelURL.path
-    }
-
-    ExternalDisplayManager.shared.notifyModelChange(task: yoloTask, modelName: fullModelPath)
+    // External display support disabled
   }
 
   @objc func handleExternalDisplayDisconnected(_ notification: Notification) {
@@ -190,30 +78,6 @@ extension ViewController {
       self.isExternalDisplayConnected = false
       self.yoloView.isHidden = false
       self.hideExternalDisplayStatus()
-
-      self.modelSegmentedControl.isHidden = false
-      [
-        self.yoloView.switchCameraButton,
-        self.yoloView.shareButton,
-      ].forEach { $0.isHidden = false }
-
-      self.yoloView.sliderNumItems.removeTarget(
-        self,
-        action: #selector(self.updateNumItemsLabelForExternalDisplay),
-        for: .valueChanged
-      )
-      self.yoloView.sliderChanged(self.yoloView.sliderNumItems)
-
-      self.yoloView.resume()
-      self.yoloView.setInferenceFlag(ok: true)
-
-      if let currentEntry = self.currentLoadingEntry {
-        self.loadModel(entry: currentEntry, forTask: self.currentTask)
-      } else if !self.currentModels.isEmpty {
-        self.loadModel(entry: self.currentModels[0], forTask: self.currentTask)
-      }
-
-      self.requestPortraitOrientation()
     }
   }
 
@@ -237,65 +101,25 @@ extension ViewController {
     }
   }
 
-  // MARK: - Layout Adjustments for External Display
-
   func adjustLayoutForExternalDisplayIfNeeded() {
-    let hasExternalDisplay = UIScreen.screens.count > 1 || SceneDelegate.hasExternalDisplay
-
-    guard hasExternalDisplay else { return }
-
-    // Layout adjustments for external display mode if needed
-    // The segmented control and custom button are already properly positioned
+    // External display support disabled for pothole detection app
   }
 
   @objc func handleExternalDisplayReady(_ notification: Notification) {
-    guard !currentTask.isEmpty && !currentModels.isEmpty else { return }
-
-    let yoloTask = tasks.first(where: { $0.name == currentTask })?.yoloTask ?? .detect
-
-    let currentEntry =
-      currentModels.first(where: { processString($0.displayName) == currentModelName })
-      ?? currentModels.first
-    guard let entry = currentEntry else { return }
-
-    var fullModelPath = ""
-    if entry.isLocalBundle,
-      let folderURL = tasks.first(where: { $0.name == currentTask })?.folder,
-      let folderPathURL = Bundle.main.url(forResource: folderURL, withExtension: nil)
-    {
-      fullModelPath = folderPathURL.appendingPathComponent(entry.identifier).path
-    }
-
-    guard !fullModelPath.isEmpty else { return }
-
-    ExternalDisplayManager.shared.notifyModelChange(task: yoloTask, modelName: fullModelPath)
+    // External display support disabled
   }
 
   func checkAndNotifyExternalDisplayIfReady() {
-    let hasExternalDisplay = UIApplication.shared.connectedScenes
-      .compactMap({ $0 as? UIWindowScene })
-      .contains(where: { $0.screen != UIScreen.main })
-
-    if hasExternalDisplay {
-      DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-        self.handleExternalDisplayReady(Notification(name: .externalDisplayReady))
-      }
-    }
+    // External display support disabled
   }
 
   func checkForExternalDisplays() {
-    let hasExternalDisplay = UIScreen.screens.count > 1
-
-    if hasExternalDisplay {
-      _ = UIApplication.shared.connectedScenes
-        .compactMap({ $0 as? UIWindowScene })
-        .first(where: { $0.screen != UIScreen.main })
-    }
+    // External display support disabled
   }
 
   func showExternalDisplayStatus() {
     let statusLabel = UILabel()
-    statusLabel.text = "📱 Camera is shown on external display\n🔄 Please use landscape orientation"
+    statusLabel.text = "Pothole Detection App\nExternal Display Mode"
     statusLabel.textColor = .white
     statusLabel.backgroundColor = UIColor.black.withAlphaComponent(0.8)
     statusLabel.textAlignment = .center
